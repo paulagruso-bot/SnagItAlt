@@ -9,8 +9,17 @@ contextBridge.exposeInMainWorld('opensnag', {
   captureFullscreen: (opts) => ipcRenderer.send('capture-fullscreen', opts || {}),
   captureWindow: (opts) => ipcRenderer.send('capture-window', opts),
   captureRegion: (opts) => ipcRenderer.send('capture-region', opts || {}),
+  capturePanoramic: () => ipcRenderer.send('capture-panoramic'),
+  captureWebPage: (url) => ipcRenderer.invoke('capture-web-page', url),
   onCaptureComplete: (fn) => ipcRenderer.on('capture-complete', (e, payload) => fn(payload)),
+  onPanoramicFrames: (fn) => ipcRenderer.on('panoramic-frames', (e, frames) => fn(frames)),
   onHotkey: (fn) => ipcRenderer.on('hotkey', (e, name) => fn(name)),
+
+  // Panoramic control panel (used by panel window only)
+  panoSnap: () => ipcRenderer.send('pano-snap'),
+  panoFinish: () => ipcRenderer.send('pano-finish'),
+  panoCancel: () => ipcRenderer.send('pano-cancel'),
+  onPanoCount: (fn) => ipcRenderer.on('pano-count', (e, n) => fn(n)),
 
   // Video
   selectVideoSource: (opts) => ipcRenderer.send('select-video-source', opts),
@@ -21,6 +30,11 @@ contextBridge.exposeInMainWorld('opensnag', {
   saveImage: (dataUrl, defaultName) =>
     ipcRenderer.invoke('save-image', { dataUrl, defaultName }),
   copyImage: (dataUrl) => ipcRenderer.invoke('copy-image', dataUrl),
+  autosaveImage: (dataUrl) => ipcRenderer.invoke('autosave-image', dataUrl),
+  saveGif: (buffer) => ipcRenderer.invoke('save-gif', buffer),
+  openImageDialog: () => ipcRenderer.invoke('open-image-dialog'),
+  openVideoDialog: () => ipcRenderer.invoke('open-video-dialog'),
+  ocrImage: (dataUrl) => ipcRenderer.invoke('ocr-image', dataUrl),
 
   // Library
   listCaptures: () => ipcRenderer.invoke('list-captures'),

@@ -34,6 +34,8 @@
     strokeWidth: 4,
     fontSize: 24,
     shadow: true,
+    stampEmoji: '✅',
+    adjustPreview: null, // live filter preview from the Enhance panel
     history: [],
     future: []
   };
@@ -81,6 +83,10 @@
       case 'step': {
         const r = o.r;
         return { x: o.x - r, y: o.y - r, w: r * 2, h: r * 2 };
+      }
+      case 'stamp': {
+        const s = o.size * 0.62;
+        return { x: o.x - s, y: o.y - s, w: s * 2, h: s * 2 };
       }
       default:
         return normRect(o);
@@ -360,6 +366,64 @@
         break;
       }
 
+      case 'cutout': { // only ever drawn as an in-progress draft
+        const r = normRect(o);
+        c.save();
+        c.fillStyle = 'rgba(233, 30, 99, 0.25)';
+        c.fillRect(r.x, r.y, r.w, r.h);
+        c.setLineDash([8, 6]);
+        c.strokeStyle = '#e91e63';
+        c.lineWidth = 2;
+        c.strokeRect(r.x, r.y, r.w, r.h);
+        c.restore();
+        break;
+      }
+
+      case 'spotlight': {
+        const r = normRect(o);
+        c.save();
+        c.fillStyle = `rgba(0,0,0,${o.dim ?? 0.55})`;
+        c.beginPath();
+        c.rect(0, 0, c.canvas.width, c.canvas.height);
+        c.rect(r.x, r.y, r.w, r.h);
+        c.fill('evenodd');
+        c.restore();
+        break;
+      }
+
+      case 'magnify': {
+        const r = normRect(o);
+        if (r.w < 4 || r.h < 4 || !state.baseImage) break;
+        const cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+        const zoom = o.zoom || 2;
+        const sw = r.w / zoom, sh = r.h / zoom;
+        c.save();
+        c.beginPath();
+        c.ellipse(cx, cy, r.w / 2, r.h / 2, 0, 0, Math.PI * 2);
+        c.clip();
+        c.imageSmoothingQuality = 'high';
+        c.drawImage(state.baseImage, cx - sw / 2, cy - sh / 2, sw, sh, r.x, r.y, r.w, r.h);
+        c.restore();
+        withShadow(c, o, () => {
+          c.beginPath();
+          c.ellipse(cx, cy, r.w / 2, r.h / 2, 0, 0, Math.PI * 2);
+          c.strokeStyle = o.color;
+          c.lineWidth = o.width;
+          c.stroke();
+        });
+        break;
+      }
+
+      case 'stamp': {
+        withShadow(c, o, () => {
+          c.font = `${o.size}px "Noto Color Emoji", "Apple Color Emoji", "Segoe UI Emoji", serif`;
+          c.textAlign = 'center';
+          c.textBaseline = 'middle';
+          c.fillText(o.emoji, o.x, o.y);
+        });
+        break;
+      }
+
       case 'step': {
         withShadow(c, o, () => {
           c.beginPath();
@@ -386,7 +450,9 @@
     if (!state.baseImage) return;
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.clearRect(0, 0, canvas.width, canvas.height);
+    if (state.adjustPreview) ctx.filter = adjustFilterString(state.adjustPreview);
     ctx.drawImage(state.baseImage, 0, 0);
+    ctx.filter = 'none';
     for (const o of state.objects) drawObject(ctx, o);
     if (state.draft) drawObject(ctx, state.draft);
     if (forExport) return;
@@ -427,7 +493,7 @@
         { id: 'tail', x: o.tailX, y: o.tailY }
       ];
     }
-    if (['rect', 'ellipse', 'highlight', 'blur'].includes(o.type)) {
+    if (['rect', 'ellipse', 'highlight', 'blur', 'spotlight', 'magnify'].includes(o.type)) {
       const b = objBounds(o);
       return [
         { id: 'nw', x: b.x, y: b.y }, { id: 'ne', x: b.x + b.w, y: b.y },
@@ -606,6 +672,18 @@
       return;
     }
 
+    if (t === 'stamp') {
+      pushHistory();
+      state.objects.push({
+        type: 'stamp', x: p.x, y: p.y,
+        size: state.fontSize * 2.2,
+        emoji: state.stampEmoji,
+        shadow: state.shadow
+      });
+      render();
+      return;
+    }
+
     // drag-to-draw tools
     pushHistory();
     state.action = 'draw';
@@ -618,6 +696,12 @@
       state.draft = { type: 'highlight', x: p.x, y: p.y, w: 0, h: 0, color: '#ffee33' };
     } else if (t === 'blur') {
       state.draft = { type: 'blur', x: p.x, y: p.y, w: 0, h: 0 };
+    } else if (t === 'spotlight') {
+      state.draft = { type: 'spotlight', x: p.x, y: p.y, w: 0, h: 0, dim: 0.55 };
+    } else if (t === 'magnify') {
+      state.draft = { type: 'magnify', x: p.x, y: p.y, w: 0, h: 0, zoom: 2, color: state.color, width: Math.max(3, state.strokeWidth), shadow: state.shadow };
+    } else if (t === 'cutout') {
+      state.draft = { type: 'cutout', x: p.x, y: p.y, w: 0, h: 0 };
     } else if (t === 'callout') {
       state.draft = {
         type: 'callout', x: p.x, y: p.y, w: 0, h: 0,
@@ -720,6 +804,10 @@
         d.type === 'pen' ? d.points.length > 2 :
         d.type === 'line' || d.type === 'arrow' ? Math.hypot(d.x2 - d.x1, d.y2 - d.y1) >= 6 :
         big(d.w) && big(d.h);
+      if (keep && d.type === 'cutout') {
+        await applyCutout(normRect(d));
+        return;
+      }
       if (keep) {
         state.objects.push(d);
         if (d.type === 'callout') openTextInput(d, true);
@@ -766,6 +854,85 @@
     setTool('select');
   }
 
+  // Remove a horizontal or vertical band and join the remaining halves
+  // (SnagIt's "cut out"). History was already pushed on mousedown.
+  async function applyCutout(r) {
+    await flatten();
+    const img = state.baseImage;
+    const w = img.naturalWidth, h = img.naturalHeight;
+    const horizontal = r.w >= r.h; // wide drag removes rows, tall drag removes columns
+    const off = document.createElement('canvas');
+    const c = off.getContext('2d');
+    if (horizontal) {
+      const y0 = Math.max(0, Math.round(r.y));
+      const y1 = Math.min(h, Math.round(r.y + r.h));
+      off.width = w;
+      off.height = Math.max(1, h - (y1 - y0));
+      c.drawImage(img, 0, 0, w, y0, 0, 0, w, y0);
+      c.drawImage(img, 0, y1, w, h - y1, 0, y0, w, h - y1);
+    } else {
+      const x0 = Math.max(0, Math.round(r.x));
+      const x1 = Math.min(w, Math.round(r.x + r.w));
+      off.width = Math.max(1, w - (x1 - x0));
+      off.height = h;
+      c.drawImage(img, 0, 0, x0, h, 0, 0, x0, h);
+      c.drawImage(img, x1, 0, w - x1, h, x0, 0, w - x1, h);
+    }
+    state.baseImage = await loadImage(off.toDataURL('image/png'));
+    sizeCanvas();
+    render();
+    setTool('select');
+  }
+
+  // ------------------------------------------------- enhance / adjustments
+
+  function adjustFilterString(a) {
+    return `brightness(${a.brightness}%) contrast(${a.contrast}%) ` +
+           `saturate(${a.saturate}%) hue-rotate(${a.hue}deg)` +
+           (a.blur > 0 ? ` blur(${a.blur}px)` : '');
+  }
+
+  function sharpenImageData(imgData, amount) {
+    // Unsharp-style 3x3 kernel: center 1+4k, cross -k.
+    const k = amount;
+    const { width: w, height: h, data: src } = imgData;
+    const out = new Uint8ClampedArray(src);
+    for (let y = 1; y < h - 1; y++) {
+      for (let x = 1; x < w - 1; x++) {
+        const i = (y * w + x) * 4;
+        for (let ch = 0; ch < 3; ch++) {
+          const v =
+            src[i + ch] * (1 + 4 * k) -
+            k * (src[i - 4 + ch] + src[i + 4 + ch] +
+                 src[i - w * 4 + ch] + src[i + w * 4 + ch]);
+          out[i + ch] = v;
+        }
+      }
+    }
+    return new ImageData(out, w, h);
+  }
+
+  async function applyAdjustments(a) {
+    if (!state.baseImage) return;
+    pushHistory();
+    const img = state.baseImage;
+    const off = document.createElement('canvas');
+    off.width = img.naturalWidth;
+    off.height = img.naturalHeight;
+    const c = off.getContext('2d');
+    c.filter = adjustFilterString(a);
+    c.drawImage(img, 0, 0);
+    c.filter = 'none';
+    if (a.sharpen > 0) {
+      const d = c.getImageData(0, 0, off.width, off.height);
+      c.putImageData(sharpenImageData(d, a.sharpen / 100), 0, 0);
+    }
+    state.baseImage = await loadImage(off.toDataURL('image/png'));
+    state.adjustPreview = null;
+    sizeCanvas();
+    render();
+  }
+
   // Flatten current annotations into the base image (used before effects).
   async function flatten() {
     if (!state.objects.length) return;
@@ -777,6 +944,20 @@
 
   async function applyEffect(effect) {
     if (!state.baseImage) return;
+
+    // Collect any user input BEFORE flattening, so cancelling leaves the
+    // document untouched (annotations still editable, no history entry).
+    let inputText = null;
+    let newWidth = 0;
+    if (effect === 'caption' || effect === 'watermark') {
+      inputText = await window.appPrompt(effect === 'caption' ? 'Caption text:' : 'Watermark text:');
+      if (!inputText) return;
+    } else if (effect === 'resize') {
+      const answer = await window.appPrompt('New width in pixels:', String(state.baseImage.naturalWidth));
+      newWidth = parseInt(answer, 10);
+      if (!newWidth || newWidth < 8 || newWidth > 20000) return;
+    }
+
     pushHistory();
     await flatten();
     const img = state.baseImage;
@@ -838,13 +1019,47 @@
         break;
       }
       case 'resize': {
-        const answer = prompt('New width in pixels:', String(w));
-        const nw = parseInt(answer, 10);
-        if (!nw || nw < 8 || nw > 20000) { state.history.pop(); return; }
-        const nh = Math.round(h * (nw / w));
-        off.width = nw; off.height = nh;
+        const nh = Math.round(h * (newWidth / w));
+        off.width = newWidth; off.height = nh;
         c.imageSmoothingQuality = 'high';
-        c.drawImage(img, 0, 0, nw, nh);
+        c.drawImage(img, 0, 0, newWidth, nh);
+        break;
+      }
+      case 'caption': {
+        const text = inputText;
+        const fs = Math.max(16, Math.round(w / 32));
+        const barH = Math.round(fs * 2.2);
+        off.width = w; off.height = h + barH;
+        c.drawImage(img, 0, 0);
+        c.fillStyle = '#1c1e24';
+        c.fillRect(0, h, w, barH);
+        c.fillStyle = '#f2f3f6';
+        c.font = `600 ${fs}px system-ui, sans-serif`;
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        c.fillText(text, w / 2, h + barH / 2, w - 24);
+        break;
+      }
+      case 'watermark': {
+        const text = inputText;
+        off.width = w; off.height = h;
+        c.drawImage(img, 0, 0);
+        c.save();
+        c.translate(w / 2, h / 2);
+        c.rotate(-Math.PI / 7);
+        c.globalAlpha = 0.16;
+        c.fillStyle = state.color;
+        c.textAlign = 'center';
+        c.textBaseline = 'middle';
+        let fs = Math.round(w / 6);
+        c.font = `700 ${fs}px system-ui, sans-serif`;
+        // shrink until it fits the diagonal
+        while (fs > 12 && c.measureText(text).width > w * 1.1) {
+          fs = Math.round(fs * 0.9);
+          c.font = `700 ${fs}px system-ui, sans-serif`;
+        }
+        c.fillText(text, 0, 0);
+        c.restore();
         break;
       }
       default:
@@ -893,6 +1108,67 @@
     state.shadow = e.target.checked;
     if (state.selected && 'shadow' in state.selected) { state.selected.shadow = state.shadow; render(); }
   });
+  document.getElementById('prop-stamp').addEventListener('change', (e) => {
+    state.stampEmoji = e.target.value;
+    if (state.selected && state.selected.type === 'stamp') { state.selected.emoji = state.stampEmoji; render(); }
+  });
+
+  // ------------------------------------------------------ enhance panel
+
+  const adjustPanel = document.getElementById('adjust-panel');
+  const adjustDefaults = { brightness: 100, contrast: 100, saturate: 100, hue: 0, blur: 0, sharpen: 0 };
+
+  function readAdjustSliders() {
+    return {
+      brightness: +document.getElementById('adj-brightness').value,
+      contrast: +document.getElementById('adj-contrast').value,
+      saturate: +document.getElementById('adj-saturate').value,
+      hue: +document.getElementById('adj-hue').value,
+      blur: +document.getElementById('adj-blur').value,
+      sharpen: +document.getElementById('adj-sharpen').value
+    };
+  }
+
+  function resetAdjustSliders() {
+    for (const [k, v] of Object.entries(adjustDefaults)) {
+      document.getElementById('adj-' + k).value = v;
+    }
+  }
+
+  document.getElementById('btn-adjust').addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (!state.baseImage) return;
+    const open = adjustPanel.classList.toggle('open');
+    if (open) {
+      resetAdjustSliders();
+      state.adjustPreview = null;
+      render();
+    }
+  });
+  adjustPanel.addEventListener('click', (e) => e.stopPropagation());
+
+  for (const k of Object.keys(adjustDefaults)) {
+    document.getElementById('adj-' + k).addEventListener('input', () => {
+      // sharpen is convolution-only, so it isn't part of the live preview
+      state.adjustPreview = readAdjustSliders();
+      render();
+    });
+  }
+
+  document.getElementById('adj-apply').addEventListener('click', async () => {
+    adjustPanel.classList.remove('open');
+    const a = readAdjustSliders();
+    state.adjustPreview = null;
+    const changed = Object.entries(adjustDefaults).some(([k, v]) => a[k] !== v);
+    if (changed) await applyAdjustments(a);
+    else render();
+  });
+
+  document.getElementById('adj-cancel').addEventListener('click', () => {
+    adjustPanel.classList.remove('open');
+    state.adjustPreview = null;
+    render();
+  });
 
   // undo / redo / zoom buttons
   document.getElementById('btn-undo').addEventListener('click', undo);
@@ -926,7 +1202,16 @@
     e.stopPropagation();
     effectsMenu.classList.toggle('open');
   });
-  window.addEventListener('click', () => effectsMenu.classList.remove('open'));
+  window.addEventListener('click', () => {
+    effectsMenu.classList.remove('open');
+    // Note: the enhance panel keeps its preview until Apply/Cancel, but close
+    // it on outside clicks and drop the preview so the canvas matches reality.
+    if (adjustPanel.classList.contains('open')) {
+      adjustPanel.classList.remove('open');
+      state.adjustPreview = null;
+      render();
+    }
+  });
   effectsMenu.querySelectorAll('button').forEach((b) =>
     b.addEventListener('click', () => {
       effectsMenu.classList.remove('open');
@@ -951,7 +1236,7 @@
     }
     if (e.key === 'Escape') { state.selected = null; state.cropRect = null; render(); return; }
     if (mod) return;
-    const keys = { v: 'select', a: 'arrow', l: 'line', r: 'rect', e: 'ellipse', p: 'pen', h: 'highlight', t: 'text', c: 'callout', s: 'step', b: 'blur', x: 'crop' };
+    const keys = { v: 'select', a: 'arrow', l: 'line', r: 'rect', e: 'ellipse', p: 'pen', h: 'highlight', t: 'text', c: 'callout', s: 'step', b: 'blur', x: 'crop', i: 'stamp', o: 'spotlight', m: 'magnify', u: 'cutout' };
     const tool = keys[e.key.toLowerCase()];
     if (tool) setTool(tool);
   });

@@ -144,9 +144,11 @@ async function captureWindowById(sourceId) {
 
 // Region capture: freeze the screen into an overlay window, let the user
 // drag a rectangle, then crop the frozen screenshot.
-let regionContext = null; // { display, image }
+// mode 'region' crops once; mode 'panoramic' remembers the rectangle and
+// opens the snap panel so the user can scroll + snap repeatedly.
+let regionContext = null; // { display, image, mode }
 
-async function startRegionCapture() {
+async function startRegionCapture(mode = 'region') {
   if (overlayWindow) return;
   const display = screen.getDisplayNearestPoint(screen.getCursorScreenPoint());
   await hideForCapture();
@@ -155,7 +157,7 @@ async function startRegionCapture() {
     showMainWindow();
     return;
   }
-  regionContext = { display, image };
+  regionContext = { display, image, mode };
 
   overlayWindow = new BrowserWindow({
     x: display.bounds.x,
@@ -198,15 +200,9 @@ function closeOverlay() {
   }
 }
 
-ipcMain.on('region-selected', (e, rect) => {
-  const ctx = regionContext;
-  closeOverlay();
-  if (!ctx || !rect || rect.width < 2 || rect.height < 2) {
-    showMainWindow();
-    return;
-  }
-  const sf = ctx.display.scaleFactor;
-  const imgSize = ctx.image.getSize();
+function cropRectForDisplay(display, image, rect) {
+  const sf = display.scaleFactor;
+  const imgSize = image.getSize();
   const crop = {
     x: Math.max(0, Math.round(rect.x * sf)),
     y: Math.max(0, Math.round(rect.y * sf)),
@@ -215,7 +211,22 @@ ipcMain.on('region-selected', (e, rect) => {
   };
   crop.width = Math.min(crop.width, imgSize.width - crop.x);
   crop.height = Math.min(crop.height, imgSize.height - crop.y);
-  const cropped = ctx.image.crop(crop);
+  return crop;
+}
+
+ipcMain.on('region-selected', (e, rect) => {
+  const ctx = regionContext;
+  closeOverlay();
+  if (!ctx || !rect || rect.width < 2 || rect.height < 2) {
+    showMainWindow();
+    return;
+  }
+  if (ctx.mode === 'panoramic') {
+    regionContext = null;
+    startPanoramicSession(ctx.display, rect);
+    return;
+  }
+  const cropped = ctx.image.crop(cropRectForDisplay(ctx.display, ctx.image, rect));
   regionContext = null;
   deliverCapture(cropped.toDataURL(), 'region');
 });
@@ -224,6 +235,150 @@ ipcMain.on('region-cancelled', () => {
   regionContext = null;
   closeOverlay();
   showMainWindow();
+});
+
+// ---------------------------------------------------------------------------
+// Panoramic capture: user picks a region, then scrolls the target app and
+// hits "Snap" for each section; the renderer stitches the frames.
+// ---------------------------------------------------------------------------
+
+let pano = null; // { display, rect, frames: [dataUrl], panel: BrowserWindow }
+
+function startPanoramicSession(display, rect) {
+  const panel = new BrowserWindow({
+    width: 320,
+    height: 64,
+    x: display.bounds.x + Math.round((display.bounds.width - 320) / 2),
+    y: display.bounds.y + 8,
+    frame: false,
+    resizable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      contextIsolation: true,
+      nodeIntegration: false
+    }
+  });
+  panel.setAlwaysOnTop(true, 'screen-saver');
+  panel.loadFile(path.join(__dirname, 'overlay', 'panel.html'));
+  pano = { display, rect, frames: [], panel };
+  panel.on('closed', () => {
+    if (pano && pano.panel === panel) pano = null;
+  });
+}
+
+ipcMain.on('pano-snap', async () => {
+  if (!pano) return;
+  const image = await captureDisplay(pano.display);
+  if (!image || image.isEmpty()) return;
+  const cropped = image.crop(cropRectForDisplay(pano.display, image, pano.rect));
+  pano.frames.push(cropped.toDataURL());
+  if (pano.panel && !pano.panel.isDestroyed()) {
+    pano.panel.webContents.send('pano-count', pano.frames.length);
+  }
+});
+
+ipcMain.on('pano-finish', () => {
+  if (!pano) return;
+  const frames = pano.frames;
+  if (pano.panel && !pano.panel.isDestroyed()) pano.panel.close();
+  pano = null;
+  showMainWindow();
+  if (frames.length) mainWindow.webContents.send('panoramic-frames', frames);
+});
+
+ipcMain.on('pano-cancel', () => {
+  if (!pano) return;
+  if (pano.panel && !pano.panel.isDestroyed()) pano.panel.close();
+  pano = null;
+  showMainWindow();
+});
+
+ipcMain.on('capture-panoramic', async () => {
+  await startRegionCapture('panoramic');
+});
+
+// ---------------------------------------------------------------------------
+// Web page capture: load the URL in a hidden window sized to the full page
+// height, then snapshot it in one go.
+// ---------------------------------------------------------------------------
+
+ipcMain.handle('capture-web-page', async (e, url) => {
+  if (!/^https?:\/\/\S+/i.test(url)) return { error: 'invalid URL' };
+  let win = null;
+  try {
+    win = new BrowserWindow({
+      width: 1280,
+      height: 900,
+      show: false,
+      webPreferences: {
+        offscreen: true,
+        contextIsolation: true,
+        nodeIntegration: false,
+        sandbox: true
+      }
+    });
+    win.webContents.setAudioMuted(true);
+    await win.loadURL(url);
+    // Let lazy content settle, then measure the full document height.
+    await delay(800);
+    const height = await win.webContents.executeJavaScript(
+      'Math.min(20000, Math.max(document.body.scrollHeight, document.documentElement.scrollHeight))',
+      true
+    );
+    win.setContentSize(1280, Math.max(600, Math.ceil(height)));
+    await delay(600); // relayout + repaint at the new size
+    const image = await win.webContents.capturePage();
+    win.destroy();
+    win = null;
+    if (!image || image.isEmpty()) return { error: 'page rendered empty' };
+    deliverCapture(image.toDataURL(), 'webpage');
+    return { ok: true };
+  } catch (err) {
+    if (win) win.destroy();
+    return { error: err.message };
+  }
+});
+
+// ---------------------------------------------------------------------------
+// OCR (offline, tesseract.js running in the main process)
+// ---------------------------------------------------------------------------
+
+let ocrWorkerPromise = null;
+
+function unpacked(p) {
+  // In packaged builds the tesseract assets live outside the asar archive.
+  return p.replace('app.asar', 'app.asar.unpacked');
+}
+
+function getOcrWorker() {
+  if (!ocrWorkerPromise) {
+    ocrWorkerPromise = (async () => {
+      const { createWorker } = require('tesseract.js');
+      return createWorker('eng', 1, {
+        langPath: unpacked(
+          path.join(__dirname, 'node_modules', '@tesseract.js-data', 'eng', '4.0.0_best_int')
+        ),
+        cacheMethod: 'none',
+        gzip: true
+      });
+    })();
+    ocrWorkerPromise.catch(() => { ocrWorkerPromise = null; });
+  }
+  return ocrWorkerPromise;
+}
+
+ipcMain.handle('ocr-image', async (e, dataUrl) => {
+  try {
+    const buf = nativeImage.createFromDataURL(dataUrl).toPNG();
+    const worker = await getOcrWorker();
+    const { data } = await worker.recognize(buf);
+    return { text: data.text || '' };
+  } catch (err) {
+    console.error('OCR failed:', err);
+    return { error: err.message };
+  }
 });
 
 // ---------------------------------------------------------------------------
@@ -362,6 +517,53 @@ ipcMain.handle('copy-image', (e, dataUrl) => {
   return true;
 });
 
+// Silent library save (used for stitched panoramas and similar).
+ipcMain.handle('autosave-image', async (e, dataUrl) => {
+  const file = path.join(capturesDir(), timestampName('Capture', 'png'));
+  const img = nativeImage.createFromDataURL(dataUrl);
+  await fsp.writeFile(file, img.toPNG());
+  return file;
+});
+
+ipcMain.handle('save-gif', async (e, buffer) => {
+  const libFile = path.join(capturesDir(), timestampName('Animation', 'gif'));
+  await fsp.writeFile(libFile, Buffer.from(buffer));
+  const { canceled, filePath } = await dialog.showSaveDialog(mainWindow, {
+    title: 'Save GIF',
+    defaultPath: path.join(app.getPath('pictures'), path.basename(libFile)),
+    filters: [{ name: 'Animated GIF', extensions: ['gif'] }]
+  });
+  if (canceled || !filePath) return null;
+  await fsp.copyFile(libFile, filePath);
+  return filePath;
+});
+
+ipcMain.handle('open-image-dialog', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Open image',
+    properties: ['openFile'],
+    filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'] }]
+  });
+  if (canceled || !filePaths.length) return null;
+  const buf = await fsp.readFile(filePaths[0]);
+  const ext = path.extname(filePaths[0]).slice(1).toLowerCase();
+  const mime = ext === 'jpg' ? 'jpeg' : ext;
+  return `data:image/${mime};base64,${buf.toString('base64')}`;
+});
+
+ipcMain.handle('open-video-dialog', async () => {
+  const { canceled, filePaths } = await dialog.showOpenDialog(mainWindow, {
+    title: 'Open video',
+    properties: ['openFile'],
+    filters: [{ name: 'Videos', extensions: ['webm', 'mp4', 'mkv', 'mov'] }]
+  });
+  if (canceled || !filePaths.length) return null;
+  const buf = await fsp.readFile(filePaths[0]);
+  const ext = path.extname(filePaths[0]).slice(1).toLowerCase();
+  const mime = ext === 'mov' ? 'quicktime' : ext === 'mkv' ? 'x-matroska' : ext;
+  return `data:video/${mime};base64,${buf.toString('base64')}`;
+});
+
 // ---------------------------------------------------------------------------
 // IPC: capture library
 // ---------------------------------------------------------------------------
@@ -372,7 +574,7 @@ ipcMain.handle('list-captures', async () => {
   const items = [];
   for (const name of names) {
     const ext = path.extname(name).toLowerCase();
-    if (!['.png', '.jpg', '.jpeg', '.webm'].includes(ext)) continue;
+    if (!['.png', '.jpg', '.jpeg', '.gif', '.webm'].includes(ext)) continue;
     const full = path.join(dir, name);
     const stat = await fsp.stat(full);
     items.push({
@@ -394,7 +596,10 @@ ipcMain.handle('read-capture', async (e, filePath) => {
   if (!resolved.startsWith(dir)) return null;
   const buf = await fsp.readFile(resolved);
   const ext = path.extname(resolved).toLowerCase();
-  const mime = ext === '.webm' ? 'video/webm' : ext === '.png' ? 'image/png' : 'image/jpeg';
+  const mime =
+    ext === '.webm' ? 'video/webm' :
+    ext === '.png' ? 'image/png' :
+    ext === '.gif' ? 'image/gif' : 'image/jpeg';
   return `data:${mime};base64,${buf.toString('base64')}`;
 });
 

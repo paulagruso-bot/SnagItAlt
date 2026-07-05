@@ -17,6 +17,40 @@
     toastTimer = setTimeout(() => el.classList.remove('show'), 2600);
   }
 
+  // ------------------------------------------------------------ modal prompt
+  // window.prompt() is unsupported in Electron renderers, so provide a
+  // minimal in-app replacement. Returns null when cancelled.
+
+  window.appPrompt = function (title, defaultValue = '') {
+    return new Promise((resolve) => {
+      const backdrop = document.createElement('div');
+      backdrop.id = 'prompt-backdrop';
+      backdrop.innerHTML = `
+        <div id="prompt-box">
+          <div class="prompt-title"></div>
+          <input type="text" id="prompt-input" />
+          <div class="prompt-actions">
+            <button class="btn" id="prompt-cancel">Cancel</button>
+            <button class="btn primary" id="prompt-ok">OK</button>
+          </div>
+        </div>`;
+      backdrop.querySelector('.prompt-title').textContent = title;
+      document.body.appendChild(backdrop);
+      const input = backdrop.querySelector('#prompt-input');
+      input.value = defaultValue;
+      const done = (val) => { backdrop.remove(); resolve(val); };
+      backdrop.querySelector('#prompt-ok').addEventListener('click', () => done(input.value));
+      backdrop.querySelector('#prompt-cancel').addEventListener('click', () => done(null));
+      backdrop.addEventListener('click', (e) => { if (e.target === backdrop) done(null); });
+      input.addEventListener('keydown', (e) => {
+        e.stopPropagation();
+        if (e.key === 'Enter') done(input.value);
+        if (e.key === 'Escape') done(null);
+      });
+      setTimeout(() => { input.focus(); input.select(); }, 0);
+    });
+  };
+
   // ------------------------------------------------------------- navigation
 
   function showView(name) {
@@ -61,11 +95,38 @@
     if (chosen) api.captureWindow({ sourceId: chosen.id, delayMs: delaySel() });
   });
 
+  document.getElementById('btn-panoramic').addEventListener('click', () => {
+    api.capturePanoramic();
+  });
+
+  document.getElementById('btn-webpage').addEventListener('click', async () => {
+    const url = await window.appPrompt('Web page URL to capture:', 'https://');
+    if (!url || url === 'https://') return;
+    toast('Loading page…');
+    const result = await api.captureWebPage(url);
+    if (result && result.error) toast('Web capture failed: ' + result.error);
+  });
+
   // Captures arrive from main (hotkeys or buttons) and open in the editor.
   api.onCaptureComplete(async ({ dataUrl }) => {
     showView('editor'); // before open() so zoom-to-fit sees real dimensions
     await window.EditorAPI.open(dataUrl);
     toast('Capture added to library');
+  });
+
+  // Panoramic frames arrive after the user hits Finish; stitch them here.
+  api.onPanoramicFrames(async (frames) => {
+    if (!frames.length) return;
+    toast(`Stitching ${frames.length} frames…`);
+    try {
+      const stitched = await window.Stitcher.stitch(frames);
+      const file = await api.autosaveImage(stitched);
+      showView('editor');
+      await window.EditorAPI.open(stitched);
+      toast(file ? 'Panoramic capture added to library' : 'Panoramic capture ready');
+    } catch (err) {
+      toast('Stitching failed: ' + err.message);
+    }
   });
 
   // ------------------------------------------------------------ source picker
@@ -271,6 +332,17 @@
     }
   });
 
+  document.getElementById('btn-edit-recording').addEventListener('click', () => {
+    if (!rec.blob) return;
+    showView('videoedit');
+    window.VideoEdit.open(URL.createObjectURL(rec.blob));
+  });
+
+  document.getElementById('ve-open-file').addEventListener('click', async () => {
+    const dataUrl = await api.openVideoDialog();
+    if (dataUrl) window.VideoEdit.open(dataUrl);
+  });
+
   api.onHotkey((name) => {
     if (name === 'toggle-recording') {
       showView('video');
@@ -281,6 +353,57 @@
   });
 
   // --------------------------------------------------------------- editor IO
+
+  document.getElementById('btn-open-image').addEventListener('click', async () => {
+    const dataUrl = await api.openImageDialog();
+    if (dataUrl) {
+      showView('editor');
+      await window.EditorAPI.open(dataUrl);
+    }
+  });
+
+  // Drag & drop image files anywhere onto the app -> open in editor.
+  window.addEventListener('dragover', (e) => e.preventDefault());
+  window.addEventListener('drop', (e) => {
+    e.preventDefault();
+    const file = [...(e.dataTransfer.files || [])].find((f) => /^image\//.test(f.type));
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = async () => {
+      showView('editor');
+      await window.EditorAPI.open(reader.result);
+      toast('Image opened');
+    };
+    reader.readAsDataURL(file);
+  });
+
+  // --------------------------------------------------------------- OCR
+
+  const ocrBackdrop = document.getElementById('ocr-backdrop');
+  document.getElementById('ocr-close').addEventListener('click', () => {
+    ocrBackdrop.style.display = 'none';
+  });
+  document.getElementById('ocr-copy').addEventListener('click', async () => {
+    await navigator.clipboard.writeText(document.getElementById('ocr-text').value);
+    toast('Text copied to clipboard');
+  });
+
+  document.getElementById('btn-ocr').addEventListener('click', async () => {
+    const url = window.EditorAPI.exportDataUrl();
+    if (!url) return;
+    ocrBackdrop.style.display = 'flex';
+    document.getElementById('ocr-text').value = '';
+    document.getElementById('ocr-status').textContent = 'Recognizing text…';
+    const result = await api.ocrImage(url);
+    if (result && result.text != null) {
+      document.getElementById('ocr-text').value = result.text.trim();
+      document.getElementById('ocr-status').textContent =
+        result.text.trim() ? 'Done' : 'No text found';
+    } else {
+      document.getElementById('ocr-status').textContent =
+        'OCR failed' + (result && result.error ? ': ' + result.error : '');
+    }
+  });
 
   document.getElementById('btn-save').addEventListener('click', async () => {
     const url = window.EditorAPI.exportDataUrl();
@@ -350,6 +473,18 @@
         });
         actions.appendChild(openBtn);
         thumb.addEventListener('click', () => openBtn.click());
+      } else if (item.type === 'video') {
+        const editBtn = document.createElement('button');
+        editBtn.className = 'btn';
+        editBtn.textContent = 'Edit video';
+        editBtn.addEventListener('click', async () => {
+          const dataUrl = await api.readCapture(item.path);
+          if (dataUrl) {
+            showView('videoedit');
+            window.VideoEdit.open(dataUrl);
+          }
+        });
+        actions.appendChild(editBtn);
       }
 
       const folderBtn = document.createElement('button');
@@ -389,6 +524,16 @@
   }
 
   // -------------------------------------------------------------- boot
+
+  // Shared surface for the other renderer modules (video editor, etc.)
+  window.AppShell = {
+    toast,
+    showView,
+    openInEditor: async (dataUrl) => {
+      showView('editor');
+      await window.EditorAPI.open(dataUrl);
+    }
+  };
 
   showView('capture');
 })();

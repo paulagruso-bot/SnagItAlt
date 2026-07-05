@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<style>
+  html, body {
+    margin: 0; height: 100%; overflow: hidden;
+    background: #22252d; color: #e8eaef;
+    font: 13px system-ui, sans-serif;
+    border: 1px solid #e91e63; border-radius: 8px;
+    box-sizing: border-box;
+    -webkit-app-region: drag; /* whole bar is draggable… */
+    user-select: none;
+  }
+  .row {
+    display: flex; align-items: center; gap: 8px;
+    height: 100%; padding: 0 12px;
+  }
+  button {
+    -webkit-app-region: no-drag; /* …except the buttons */
+    font: inherit; border-radius: 6px; cursor: pointer;
+    border: 1px solid #363b47; background: #2b2f39; color: #e8eaef;
+    padding: 7px 12px;
+  }
+  button.primary { background: #e91e63; border-color: #e91e63; color: #fff; }
+  #count { color: #9aa1ae; min-width: 64px; }
+</style>
+</head>
+<body>
+  <div class="row">
+    <button class="primary" id="snap">📸 Snap</button>
+    <span id="count">0 frames</span>
+    <button id="finish">Finish</button>
+    <button id="cancel">✕</button>
+  </div>
+  <script src="panel.js"></script>
+</body>
+</html>

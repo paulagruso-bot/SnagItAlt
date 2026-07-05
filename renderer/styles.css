@@ -261,6 +261,106 @@ input[type="range"] { accent-color: var(--accent); }
 }
 .source-item .name img { width: 15px; height: 15px; }
 
+/* ----------------------------- Enhance panel --------------------------- */
+
+.dropdown-menu.adjust { min-width: 240px; padding: 12px; }
+.dropdown-menu.adjust label {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; color: var(--fg-dim); font-size: 12.5px; padding: 5px 2px;
+}
+.dropdown-menu.adjust input[type="range"] { width: 130px; }
+.adjust-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 10px; }
+
+/* ----------------------------- Video editor ---------------------------- */
+
+#ve-workspace { display: flex; flex-direction: column; gap: 14px; max-width: 980px; }
+#ve-player-wrap { position: relative; width: fit-content; max-width: 100%; }
+#ve-player {
+  max-width: 100%; max-height: 46vh; display: block;
+  background: #000; border: 1px solid var(--border); border-radius: 10px;
+}
+#ve-crop-layer {
+  position: absolute; inset: 0; cursor: crosshair; z-index: 5;
+  background: rgba(0,0,0,0.25);
+}
+#ve-crop-box {
+  position: absolute; display: none; pointer-events: none;
+  border: 2px dashed var(--accent); background: rgba(233,30,99,0.12);
+}
+#ve-crop-hint {
+  position: absolute; top: 10px; left: 50%; transform: translateX(-50%);
+  background: rgba(20,20,26,0.9); color: var(--fg); font-size: 12.5px;
+  padding: 6px 12px; border-radius: 7px; z-index: 6; pointer-events: none;
+  white-space: nowrap;
+}
+.ve-row {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  color: var(--fg-dim);
+}
+.ve-row b { color: var(--fg); font-size: 13px; min-width: 42px; }
+.ve-row input[type="range"] { width: 180px; accent-color: var(--accent); }
+.ve-row input[type="text"] {
+  background: var(--bg-3); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 6px;
+  padding: 6px 10px; font: inherit; width: 280px;
+}
+#ve-progress { display: flex; align-items: center; gap: 12px; }
+#ve-progress-track {
+  flex: 0 0 320px; height: 8px; border-radius: 4px;
+  background: var(--bg-3); overflow: hidden;
+}
+#ve-progress-fill { height: 100%; width: 0; background: var(--accent); transition: width .15s; }
+
+/* ------------------------------ Prompt modal --------------------------- */
+
+#prompt-backdrop {
+  position: fixed; inset: 0; z-index: 70;
+  background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center;
+}
+#prompt-box {
+  width: min(420px, 90vw);
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 12px;
+  padding: 18px;
+  display: flex; flex-direction: column; gap: 12px;
+}
+.prompt-title { font-weight: 600; }
+#prompt-input {
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 7px;
+  padding: 8px 10px; font: inherit; outline: none;
+}
+#prompt-input:focus { border-color: var(--accent); }
+.prompt-actions { display: flex; justify-content: flex-end; gap: 8px; }
+
+/* -------------------------------- OCR modal ---------------------------- */
+
+#ocr-backdrop {
+  position: fixed; inset: 0; z-index: 55;
+  background: rgba(0,0,0,.55);
+  display: flex; align-items: center; justify-content: center;
+}
+#ocr-modal {
+  width: min(680px, 90vw); max-height: 78vh;
+  background: var(--bg-2); border: 1px solid var(--border); border-radius: 14px;
+  display: flex; flex-direction: column; overflow: hidden;
+}
+#ocr-modal header {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 14px 18px; border-bottom: 1px solid var(--border);
+  font-weight: 600;
+}
+#ocr-text {
+  flex: 1; min-height: 240px; margin: 14px 18px 0; padding: 10px;
+  background: var(--bg); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 8px;
+  font: 13px/1.5 ui-monospace, monospace; resize: none; outline: none;
+}
+#ocr-modal footer {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 12px 18px;
+}
+
 /* -------------------------------- Toast -------------------------------- */
 
 #toast {
