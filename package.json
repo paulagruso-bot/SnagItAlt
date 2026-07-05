@@ -1,7 +1,7 @@
 {
   "name": "opensnag",
   "productName": "OpenSnag",
-  "version": "1.1.0",
+  "version": "1.2.0",
   "description": "Free, open-source screen capture, screen recording and image editing tool — a SnagIt alternative.",
   "main": "main.js",
   "license": "MIT",
