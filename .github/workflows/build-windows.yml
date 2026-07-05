@@ -3,6 +3,10 @@ name: Build Windows installer
 on:
   workflow_dispatch:
   push:
+    branches:
+      - claude/snagit-screen-capture-tool-08kvjr
+      - main
+      - master
     tags:
       - 'v*'
 
@@ -40,9 +44,22 @@ jobs:
             dist/*.blockmap
           if-no-files-found: error
 
-      - name: Attach installers to release
+      - name: Attach installers to tagged release
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
           files: dist/*.exe
           generate_release_notes: true
+
+      - name: Publish installers to the rolling "latest" release
+        if: startsWith(github.ref, 'refs/heads/')
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: OpenSnag — latest Windows build
+          body: |
+            Automated Windows build of the newest commit.
+            - **OpenSnag Setup *x*.*x*.*x*.exe** — installer (recommended)
+            - **OpenSnag *x*.*x*.*x*.exe** — portable, no install needed
+          prerelease: true
+          files: dist/*.exe
