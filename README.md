@@ -97,7 +97,21 @@ Every capture, recording and GIF is automatically kept in a local library
 (`<user data>/Captures`) with thumbnails — re-open images in the editor, videos
 in the video editor, reveal on disk, or delete.
 
-## Install / Run
+## Download (Windows)
+
+Ready-made Windows builds are produced by CI on every push and published on the
+[**Releases page**](https://github.com/paulagruso-bot/SnagItAlt/releases) — see the
+rolling **"OpenSnag — latest Windows build"** release:
+
+- `OpenSnag Setup 1.2.0.exe` — **installer** (recommended): per-user install,
+  desktop + Start-menu shortcuts, uninstaller
+- `OpenSnag 1.2.0.exe` — **portable**: run from anywhere, no install
+
+The builds are unsigned, so Windows SmartScreen will show *"Windows protected
+your PC"* on first run — click **More info → Run anyway**. (Code signing
+requires a paid certificate; the source is right here to audit.)
+
+## Build from source
 
 Requires [Node.js](https://nodejs.org) 18+ only for building; end users just run the installer.
 
