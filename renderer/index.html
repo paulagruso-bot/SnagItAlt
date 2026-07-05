@@ -1,0 +1,247 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'self'; img-src 'self' data: blob:; media-src 'self' data: blob:; style-src 'self' 'unsafe-inline'" />
+<title>OpenSnag</title>
+<link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+<div id="app">
+
+  <!-- ============================== Sidebar ============================== -->
+  <nav id="sidebar">
+    <div class="logo">
+      <svg viewBox="0 0 32 32" width="30" height="30">
+        <rect x="3" y="3" width="26" height="26" rx="7" fill="#e91e63"/>
+        <path d="M9 13v-2.5A1.5 1.5 0 0 1 10.5 9H13M19 9h2.5A1.5 1.5 0 0 1 23 10.5V13M23 19v2.5a1.5 1.5 0 0 1-1.5 1.5H19M13 23h-2.5A1.5 1.5 0 0 1 9 21.5V19"
+              stroke="#fff" stroke-width="2.2" fill="none" stroke-linecap="round"/>
+        <circle cx="16" cy="16" r="3.2" fill="#fff"/>
+      </svg>
+      <span>OpenSnag</span>
+    </div>
+    <button class="nav-btn active" data-view="capture" title="Capture">
+      <svg viewBox="0 0 24 24"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round"/><circle cx="12" cy="12" r="3" fill="currentColor"/></svg>
+      <span>Capture</span>
+    </button>
+    <button class="nav-btn" data-view="video" title="Video">
+      <svg viewBox="0 0 24 24"><rect x="2" y="6" width="14" height="12" rx="2" stroke="currentColor" stroke-width="2" fill="none"/><path d="M16 10.5 21 8v8l-5-2.5" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/></svg>
+      <span>Video</span>
+    </button>
+    <button class="nav-btn" data-view="editor" title="Editor">
+      <svg viewBox="0 0 24 24"><path d="M15.5 4.5 19.5 8.5 8 20H4v-4L15.5 4.5z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/><path d="M13 7l4 4" stroke="currentColor" stroke-width="2"/></svg>
+      <span>Editor</span>
+    </button>
+    <button class="nav-btn" data-view="library" title="Library">
+      <svg viewBox="0 0 24 24"><rect x="3" y="4" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="13" y="4" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="3" y="13" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/><rect x="13" y="13" width="8" height="7" rx="1.5" stroke="currentColor" stroke-width="2" fill="none"/></svg>
+      <span>Library</span>
+    </button>
+    <div class="sidebar-footer">
+      <div class="hotkey-hint">
+        <b>Hotkeys</b>
+        PrtScn — region<br/>
+        Ctrl+Shift+PrtScn — full<br/>
+        Ctrl+Alt+V — record
+      </div>
+    </div>
+  </nav>
+
+  <!-- ============================== Views ============================== -->
+  <main id="views">
+
+    <!-- Capture view -->
+    <section id="view-capture" class="view active">
+      <h1>Image capture</h1>
+      <p class="sub">Grab a region, a full screen or a single window. Every capture opens in the editor and is saved to your library automatically.</p>
+
+      <div class="capture-cards">
+        <button class="capture-card" id="btn-region">
+          <svg viewBox="0 0 48 48"><rect x="10" y="10" width="28" height="28" rx="3" stroke="currentColor" stroke-width="2.5" stroke-dasharray="6 5" fill="none"/><circle cx="24" cy="24" r="4" fill="currentColor"/></svg>
+          <b>Region</b>
+          <span>Drag to select any part of the screen</span>
+        </button>
+        <button class="capture-card" id="btn-fullscreen">
+          <svg viewBox="0 0 48 48"><rect x="6" y="9" width="36" height="24" rx="3" stroke="currentColor" stroke-width="2.5" fill="none"/><path d="M18 39h12" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"/></svg>
+          <b>Full screen</b>
+          <span>Capture an entire display</span>
+        </button>
+        <button class="capture-card" id="btn-window">
+          <svg viewBox="0 0 48 48"><rect x="8" y="10" width="32" height="28" rx="3" stroke="currentColor" stroke-width="2.5" fill="none"/><path d="M8 18h32" stroke="currentColor" stroke-width="2.5"/><circle cx="13" cy="14" r="1.6" fill="currentColor"/><circle cx="18" cy="14" r="1.6" fill="currentColor"/></svg>
+          <b>Window</b>
+          <span>Pick one application window</span>
+        </button>
+      </div>
+
+      <div class="capture-options">
+        <label>Delay
+          <select id="capture-delay">
+            <option value="0">None</option>
+            <option value="3000">3 seconds</option>
+            <option value="5000">5 seconds</option>
+            <option value="10000">10 seconds</option>
+          </select>
+        </label>
+        <label id="display-select-wrap" style="display:none">Display
+          <select id="display-select"></select>
+        </label>
+      </div>
+    </section>
+
+    <!-- Video view -->
+    <section id="view-video" class="view">
+      <h1>Video capture</h1>
+      <p class="sub">Record a screen or window as WebM video, with optional microphone narration.</p>
+
+      <div class="video-panel">
+        <div class="video-controls">
+          <button class="btn primary" id="btn-pick-source">Choose what to record…</button>
+          <span id="video-source-label" class="muted">No source selected</span>
+          <label class="check"><input type="checkbox" id="chk-mic" /> Microphone</label>
+          <label class="check"><input type="checkbox" id="chk-sysaudio" /> System audio (Windows)</label>
+        </div>
+        <div class="video-controls">
+          <button class="btn record" id="btn-record" disabled>● Record</button>
+          <button class="btn" id="btn-pause" disabled>⏸ Pause</button>
+          <button class="btn" id="btn-stop" disabled>■ Stop</button>
+          <span id="rec-timer">00:00</span>
+        </div>
+        <video id="video-preview" autoplay muted playsinline></video>
+        <div id="video-result" style="display:none">
+          <video id="video-playback" controls playsinline></video>
+          <div class="video-controls">
+            <button class="btn primary" id="btn-save-video">Save recording…</button>
+            <span id="video-saved-label" class="muted"></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Editor view -->
+    <section id="view-editor" class="view">
+      <div id="editor-toolbar">
+        <div class="tool-group" id="tool-buttons">
+          <button class="tool-btn active" data-tool="select" title="Select / move (V)">
+            <svg viewBox="0 0 24 24"><path d="M6 3l12 9-5.2 1.2L15 19l-2.6 1.2-2.2-5.8L6 17V3z" fill="currentColor"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="arrow" title="Arrow (A)">
+            <svg viewBox="0 0 24 24"><path d="M4 20 18 6M18 6h-7M18 6v7" stroke="currentColor" stroke-width="2.4" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="line" title="Line (L)">
+            <svg viewBox="0 0 24 24"><path d="M4 20 20 4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="rect" title="Rectangle (R)">
+            <svg viewBox="0 0 24 24"><rect x="4" y="6" width="16" height="12" rx="1.5" stroke="currentColor" stroke-width="2.2" fill="none"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="ellipse" title="Ellipse (E)">
+            <svg viewBox="0 0 24 24"><ellipse cx="12" cy="12" rx="8.5" ry="6" stroke="currentColor" stroke-width="2.2" fill="none"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="pen" title="Pen — freehand (P)">
+            <svg viewBox="0 0 24 24"><path d="M4 18c3-6 5 3 8-4s5 0 8-6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="highlight" title="Highlighter (H)">
+            <svg viewBox="0 0 24 24"><rect x="4" y="9" width="16" height="7" fill="currentColor" opacity="0.45"/><path d="M4 18h16" stroke="currentColor" stroke-width="2"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="text" title="Text (T)">
+            <svg viewBox="0 0 24 24"><path d="M5 6V4h14v2M12 4v16m-3 0h6" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="callout" title="Callout (C)">
+            <svg viewBox="0 0 24 24"><path d="M4 5h16v10H11l-4 4v-4H4V5z" stroke="currentColor" stroke-width="2" fill="none" stroke-linejoin="round"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="step" title="Step number (S)">
+            <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="9" stroke="currentColor" stroke-width="2" fill="none"/><text x="12" y="16" text-anchor="middle" font-size="11" font-weight="700" fill="currentColor">1</text></svg>
+          </button>
+          <button class="tool-btn" data-tool="blur" title="Blur / redact (B)">
+            <svg viewBox="0 0 24 24"><rect x="4" y="4" width="7" height="7" fill="currentColor" opacity=".9"/><rect x="13" y="4" width="7" height="7" fill="currentColor" opacity=".4"/><rect x="4" y="13" width="7" height="7" fill="currentColor" opacity=".4"/><rect x="13" y="13" width="7" height="7" fill="currentColor" opacity=".9"/></svg>
+          </button>
+          <button class="tool-btn" data-tool="crop" title="Crop (X)">
+            <svg viewBox="0 0 24 24"><path d="M7 3v14a2 2 0 0 0 2 2h12M3 7h14a2 2 0 0 1 2 2v12" stroke="currentColor" stroke-width="2.2" fill="none" stroke-linecap="round"/></svg>
+          </button>
+        </div>
+
+        <div class="tool-group" id="prop-controls">
+          <label class="prop" title="Stroke color"><input type="color" id="prop-color" value="#e91e63" /></label>
+          <label class="prop" title="Fill">
+            <select id="prop-fill">
+              <option value="none">No fill</option>
+              <option value="solid">Solid</option>
+              <option value="translucent">Translucent</option>
+            </select>
+          </label>
+          <label class="prop" title="Stroke width">
+            <input type="range" id="prop-width" min="1" max="24" value="4" />
+          </label>
+          <label class="prop" title="Font size">
+            <select id="prop-fontsize">
+              <option>14</option><option>18</option><option selected>24</option>
+              <option>32</option><option>48</option><option>64</option>
+            </select>
+          </label>
+          <label class="check" title="Drop shadow on shapes"><input type="checkbox" id="prop-shadow" checked />Shadow</label>
+        </div>
+
+        <div class="tool-group">
+          <button class="btn icon" id="btn-undo" title="Undo (Ctrl+Z)">↩</button>
+          <button class="btn icon" id="btn-redo" title="Redo (Ctrl+Y)">↪</button>
+          <span class="sep"></span>
+          <button class="btn icon" id="btn-zoom-out" title="Zoom out">−</button>
+          <span id="zoom-label">100%</span>
+          <button class="btn icon" id="btn-zoom-in" title="Zoom in">+</button>
+          <button class="btn icon" id="btn-zoom-fit" title="Fit to window">⤢</button>
+          <span class="sep"></span>
+          <div class="dropdown">
+            <button class="btn" id="btn-effects">Effects ▾</button>
+            <div class="dropdown-menu" id="effects-menu">
+              <button data-effect="border">Add border</button>
+              <button data-effect="shadow">Add drop shadow</button>
+              <button data-effect="rounded">Round corners</button>
+              <button data-effect="rotate">Rotate 90°</button>
+              <button data-effect="flip-h">Flip horizontal</button>
+              <button data-effect="flip-v">Flip vertical</button>
+              <button data-effect="grayscale">Grayscale</button>
+              <button data-effect="resize">Resize image…</button>
+            </div>
+          </div>
+          <span class="sep"></span>
+          <button class="btn" id="btn-copy" title="Copy to clipboard (Ctrl+C)">Copy</button>
+          <button class="btn primary" id="btn-save" title="Save as… (Ctrl+S)">Save</button>
+        </div>
+      </div>
+
+      <div id="editor-stage">
+        <div id="editor-empty">
+          <p>No image open.<br/>Take a capture or open one from the library.</p>
+        </div>
+        <div id="canvas-wrap" style="display:none">
+          <canvas id="editor-canvas"></canvas>
+          <textarea id="text-input" spellcheck="false"></textarea>
+        </div>
+      </div>
+    </section>
+
+    <!-- Library view -->
+    <section id="view-library" class="view">
+      <h1>Library</h1>
+      <p class="sub">Every capture and recording is kept here automatically.</p>
+      <div id="library-grid"></div>
+    </section>
+  </main>
+
+  <!-- Source picker modal (windows / screens) -->
+  <div id="modal-backdrop" style="display:none">
+    <div id="source-modal">
+      <header>
+        <span id="source-modal-title">Choose a window</span>
+        <button class="btn icon" id="source-modal-close">✕</button>
+      </header>
+      <div id="source-grid"></div>
+    </div>
+  </div>
+
+  <div id="toast"></div>
+</div>
+
+<script src="editor.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
