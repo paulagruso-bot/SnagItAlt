@@ -15,6 +15,12 @@ contextBridge.exposeInMainWorld('opensnag', {
   onPanoramicFrames: (fn) => ipcRenderer.on('panoramic-frames', (e, frames) => fn(frames)),
   onHotkey: (fn) => ipcRenderer.on('hotkey', (e, name) => fn(name)),
 
+  // Hotkey configuration
+  platform: process.platform,
+  getHotkeys: () => ipcRenderer.invoke('get-hotkeys'),
+  setHotkey: (id, accelerator) => ipcRenderer.invoke('set-hotkey', { id, accelerator }),
+  resetHotkeys: () => ipcRenderer.invoke('reset-hotkeys'),
+
   // Panoramic control panel (used by panel window only)
   panoSnap: () => ipcRenderer.send('pano-snap'),
   panoFinish: () => ipcRenderer.send('pano-finish'),

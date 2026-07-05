@@ -107,6 +107,140 @@
     if (result && result.error) toast('Web capture failed: ' + result.error);
   });
 
+  // ------------------------------------------------------------- hotkeys UI
+
+  function prettyAccel(accel) {
+    return accel
+      .replace(/CommandOrControl/g, api.platform === 'darwin' ? 'Cmd' : 'Ctrl')
+      .replace(/PrintScreen/g, 'PrtScn');
+  }
+
+  // Convert a KeyboardEvent into an Electron accelerator string.
+  // Returns null for pure-modifier presses (keep listening) and
+  // { error } for combinations we refuse (no modifier on a plain key).
+  function eventToAccelerator(e) {
+    const MODS = ['Control', 'Shift', 'Alt', 'Meta'];
+    if (MODS.includes(e.key)) return null;
+
+    const parts = [];
+    if (e.ctrlKey) parts.push('CommandOrControl');
+    if (e.metaKey && api.platform === 'darwin') parts.push('CommandOrControl');
+    else if (e.metaKey) parts.push('Super');
+    if (e.altKey) parts.push('Alt');
+    if (e.shiftKey) parts.push('Shift');
+
+    let key = e.key;
+    const KEYMAP = {
+      ' ': 'Space', ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left',
+      ArrowRight: 'Right', '+': 'Plus', Escape: null
+    };
+    if (key in KEYMAP) key = KEYMAP[key];
+    if (key == null) return { error: 'cancelled' };
+
+    if (/^[a-z]$/i.test(key)) key = key.toUpperCase();
+    const bareOk = /^(F\d{1,2}|PrintScreen)$/.test(key);
+    const NAMED = /^(F\d{1,2}|PrintScreen|Space|Tab|Backspace|Delete|Insert|Home|End|PageUp|PageDown|Up|Down|Left|Right|Plus|[A-Z0-9]|[`~!@#$%^&*()\-=[\]\\;',./])$/;
+    if (!NAMED.test(key)) return { error: `“${e.key}” can't be used in a shortcut` };
+    if (!parts.length && !bareOk) {
+      return { error: 'Add a modifier (Ctrl/Alt/Shift) — bare keys are only allowed for PrtScn and F-keys' };
+    }
+    parts.push(key);
+    return { accelerator: parts.join('+') };
+  }
+
+  let rebinding = null; // { id, btn } while waiting for a key combo
+
+  function stopRebinding() {
+    if (!rebinding) return;
+    window.removeEventListener('keydown', onRebindKey, true);
+    rebinding = null;
+  }
+
+  async function onRebindKey(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.key === 'Escape') { stopRebinding(); refreshHotkeys(); return; }
+    const result = eventToAccelerator(e);
+    if (result === null) return; // just a modifier — keep waiting
+    const { id } = rebinding;
+    stopRebinding();
+    if (result.error) {
+      if (result.error !== 'cancelled') toast(result.error);
+      refreshHotkeys();
+      return;
+    }
+    const reply = await api.setHotkey(id, result.accelerator);
+    if (reply && reply.error) toast('Not set: ' + reply.error);
+    else if (reply && reply.state && !reply.state.ok) {
+      toast(`${prettyAccel(result.accelerator)} is taken by another app`);
+    } else {
+      toast(`Hotkey set to ${prettyAccel(result.accelerator)}`);
+    }
+    refreshHotkeys();
+  }
+
+  async function refreshHotkeys() {
+    const states = await api.getHotkeys();
+    if (!states || !states.length) return;
+
+    // sidebar summary (only live bindings)
+    const sidebar = document.getElementById('sidebar-hotkeys');
+    sidebar.innerHTML = '';
+    for (const s of states.filter((s) => s.ok)) {
+      const line = document.createElement('span');
+      line.textContent = `${prettyAccel(s.accelerator)} — ${s.label.replace(/^(Capture|Start \/ stop)\s*/i, '')}`;
+      sidebar.appendChild(line);
+      sidebar.appendChild(document.createElement('br'));
+    }
+
+    // settings rows
+    const list = document.getElementById('hotkey-list');
+    list.innerHTML = '';
+    for (const s of states) {
+      const row = document.createElement('div');
+      row.className = 'hotkey-row';
+
+      const label = document.createElement('span');
+      label.className = 'hk-label';
+      label.textContent = s.label;
+      row.appendChild(label);
+
+      const btn = document.createElement('button');
+      btn.className = 'hk-binding' + (s.ok ? '' : ' hk-bad');
+      btn.textContent = prettyAccel(s.accelerator) + (s.ok ? '' : '  (unavailable)');
+      btn.title = s.ok
+        ? 'Click to change this shortcut'
+        : 'This combination is registered by another application — click to choose a different one';
+      btn.addEventListener('click', () => {
+        stopRebinding();
+        btn.textContent = 'Press keys…';
+        btn.classList.add('hk-listening');
+        rebinding = { id: s.id, btn };
+        window.addEventListener('keydown', onRebindKey, true);
+      });
+      row.appendChild(btn);
+
+      if (s.isCustom) {
+        const clear = document.createElement('button');
+        clear.className = 'btn hk-clear';
+        clear.textContent = 'Default';
+        clear.title = 'Restore the default shortcut for this action';
+        clear.addEventListener('click', async () => {
+          await api.setHotkey(s.id, null);
+          refreshHotkeys();
+        });
+        row.appendChild(clear);
+      }
+      list.appendChild(row);
+    }
+  }
+
+  document.getElementById('hotkeys-reset').addEventListener('click', async () => {
+    await api.resetHotkeys();
+    toast('Hotkeys reset to defaults');
+    refreshHotkeys();
+  });
+
   // Captures arrive from main (hotkeys or buttons) and open in the editor.
   api.onCaptureComplete(async ({ dataUrl }) => {
     showView('editor'); // before open() so zoom-to-fit sees real dimensions
@@ -349,6 +483,9 @@
       if (rec.recorder && rec.recorder.state !== 'inactive') btnStop.click();
       else if (!btnRecord.disabled) btnRecord.click();
       else btnPick.click();
+    } else if (name === 'window-capture') {
+      showView('capture');
+      document.getElementById('btn-window').click();
     }
   });
 
@@ -536,4 +673,5 @@
   };
 
   showView('capture');
+  refreshHotkeys();
 })();

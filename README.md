@@ -22,10 +22,25 @@ subscription, no telemetry. OCR included, fully offline.
   (coarse + pixel-perfect fine seam matching)
 - **Web page capture** — enter a URL, get a full-length screenshot of the entire page
 - **Timed capture** — 3 / 5 / 10-second delay to set up menus and tooltips
-- **Global hotkeys** — `PrtScn` (region), `Ctrl+Shift+PrtScn` (full screen),
-  `Ctrl+Alt+V` (start/stop recording); `Ctrl+Alt+R` / `Ctrl+Alt+F` as fallbacks
+- **Global hotkeys for every capture type** — system-wide, working even while
+  the app sits in the tray, and **fully rebindable** from the Capture view
+  (click a shortcut, press the new combination; overrides persist):
+
+  | Action | Default |
+  |--------|---------|
+  | Capture region | `PrtScn` (falls back to `Ctrl+Alt+R` if taken) |
+  | Capture full screen | `Ctrl+Shift+PrtScn` (fallback `Ctrl+Alt+F`) |
+  | Capture window | `Ctrl+Alt+W` |
+  | Panoramic capture | `Ctrl+Alt+P` |
+  | Start / stop recording | `Ctrl+Alt+V` |
+
+  If another app owns a combination (Windows' Snipping Tool often claims
+  `PrtScn`), OpenSnag automatically registers the fallback and the UI flags
+  the conflict in red so you can rebind. The tray menu and sidebar always
+  show the bindings that are actually live.
 - **Tray icon** — the app keeps running in the background; closing the window
-  minimizes to the tray, just like SnagIt's capture widget
+  minimizes to the tray, just like SnagIt's capture widget. Every capture
+  action (with its live hotkey) is available from the tray menu.
 
 ### Video capture
 - Record any **screen or window** to WebM (VP9, 30 fps, high bitrate)
@@ -136,9 +151,11 @@ renderer/gif.js      dependency-free animated GIF89a encoder (median-cut + LZW)
 renderer/stitch.js   panoramic stitcher (downscaled search + full-res refinement)
 ```
 
-All renderer logic is verified headless in Chromium (43 automated UI checks
+All renderer logic is verified headless in Chromium (66 automated UI checks
 covering capture flows, every editor tool, the enhance panel, effects, GIF
-encoding round-trip, stitching accuracy, and the full video edit/export pipeline).
+encoding round-trip, stitching accuracy, the full video edit/export pipeline,
+and the hotkey configuration UI: rebinding, key validation, conflict display
+and reset).
 
 ## License
 

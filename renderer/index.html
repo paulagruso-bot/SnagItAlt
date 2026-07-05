@@ -44,9 +44,7 @@
     <div class="sidebar-footer">
       <div class="hotkey-hint">
         <b>Hotkeys</b>
-        PrtScn — region<br/>
-        Ctrl+Shift+PrtScn — full<br/>
-        Ctrl+Alt+V — record
+        <span id="sidebar-hotkeys">loading…</span>
       </div>
     </div>
   </nav>
@@ -99,6 +97,16 @@
         <label id="display-select-wrap" style="display:none">Display
           <select id="display-select"></select>
         </label>
+      </div>
+
+      <h2 class="section-title">Global hotkeys</h2>
+      <p class="sub small">Trigger captures from anywhere, even while OpenSnag is minimized to the tray.
+      Click a shortcut to rebind it, then press the new key combination
+      (<kbd>Esc</kbd> cancels). A red binding means another application owns
+      that combination — pick a different one.</p>
+      <div id="hotkey-list"></div>
+      <div class="capture-options">
+        <button class="btn" id="hotkeys-reset">Reset to defaults</button>
       </div>
     </section>
 

@@ -108,6 +108,34 @@ select, input[type="color"] {
 input[type="color"] { padding: 2px; width: 34px; height: 28px; cursor: pointer; }
 input[type="range"] { accent-color: var(--accent); }
 
+/* ------------------------------ Hotkey panel --------------------------- */
+
+.section-title { margin: 34px 0 4px; font-size: 16px; }
+.sub.small { font-size: 12.5px; max-width: 640px; margin-bottom: 14px; }
+.sub.small kbd {
+  background: var(--bg-3); border: 1px solid var(--border);
+  border-radius: 4px; padding: 0 5px; font-family: inherit;
+}
+
+#hotkey-list { display: flex; flex-direction: column; gap: 6px; max-width: 560px; }
+.hotkey-row { display: flex; align-items: center; gap: 10px; }
+.hk-label { flex: 1; color: var(--fg-dim); }
+.hk-binding {
+  min-width: 210px; text-align: center;
+  background: var(--bg-3); color: var(--fg);
+  border: 1px solid var(--border); border-radius: 7px;
+  padding: 7px 12px; font: 600 12.5px/1.4 ui-monospace, monospace;
+  cursor: pointer;
+}
+.hk-binding:hover { border-color: var(--accent-2); }
+.hk-binding.hk-bad { color: #ff6b81; border-color: #a33; }
+.hk-binding.hk-listening {
+  border-color: var(--accent); color: var(--accent-2);
+  animation: hk-pulse 1s infinite;
+}
+@keyframes hk-pulse { 50% { background: rgba(233, 30, 99, 0.14); } }
+.hk-clear { padding: 5px 10px; font-size: 12px; }
+
 /* ------------------------------- Buttons ------------------------------- */
 
 .btn {

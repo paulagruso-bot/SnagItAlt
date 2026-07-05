@@ -617,7 +617,147 @@ ipcMain.on('open-external', (e, url) => {
 });
 
 // ---------------------------------------------------------------------------
-// Tray + global hotkeys
+// Settings (persisted to <userData>/settings.json)
+// ---------------------------------------------------------------------------
+
+const settingsPath = () => path.join(app.getPath('userData'), 'settings.json');
+
+function loadSettings() {
+  try {
+    return JSON.parse(fs.readFileSync(settingsPath(), 'utf8')) || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveSettings(settings) {
+  try {
+    fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2));
+  } catch (err) {
+    console.error('Failed to save settings:', err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Global hotkeys
+//
+// Every capture type has a system-wide hotkey. Each action has a list of
+// default candidate accelerators — if the first is taken by another app
+// (PrintScreen often is on Windows), the next candidate is registered
+// instead, and the UI shows which binding is actually live. Users can
+// rebind any action from the Capture view; overrides persist in settings.
+// ---------------------------------------------------------------------------
+
+const HOTKEY_ACTIONS = [
+  {
+    id: 'region',
+    label: 'Capture region',
+    candidates: ['PrintScreen', 'CommandOrControl+Alt+R'],
+    run: () => startRegionCapture()
+  },
+  {
+    id: 'fullscreen',
+    label: 'Capture full screen',
+    candidates: ['CommandOrControl+Shift+PrintScreen', 'CommandOrControl+Alt+F'],
+    run: () => captureFullScreen()
+  },
+  {
+    id: 'window',
+    label: 'Capture window',
+    candidates: ['CommandOrControl+Alt+W'],
+    run: () => {
+      showMainWindow();
+      mainWindow.webContents.send('hotkey', 'window-capture');
+    }
+  },
+  {
+    id: 'panoramic',
+    label: 'Panoramic capture',
+    candidates: ['CommandOrControl+Alt+P'],
+    run: () => startRegionCapture('panoramic')
+  },
+  {
+    id: 'record',
+    label: 'Start / stop recording',
+    candidates: ['CommandOrControl+Alt+V'],
+    run: () => {
+      showMainWindow();
+      mainWindow.webContents.send('hotkey', 'toggle-recording');
+    }
+  }
+];
+
+let hotkeyState = {}; // id -> { id, label, accelerator, ok, isCustom }
+
+function registerAllHotkeys() {
+  globalShortcut.unregisterAll();
+  const overrides = loadSettings().hotkeys || {};
+  hotkeyState = {};
+  for (const action of HOTKEY_ACTIONS) {
+    const custom = overrides[action.id];
+    // A custom binding replaces the defaults entirely: if it can't be
+    // registered we report failure rather than silently doing something else.
+    const candidates = custom ? [custom] : action.candidates;
+    let registered = null;
+    for (const accel of candidates) {
+      try {
+        if (globalShortcut.register(accel, action.run)) {
+          registered = accel;
+          break;
+        }
+      } catch {
+        // malformed accelerator or platform refusal — try the next one
+      }
+    }
+    hotkeyState[action.id] = {
+      id: action.id,
+      label: action.label,
+      accelerator: registered || candidates[0],
+      ok: !!registered,
+      isCustom: !!custom
+    };
+  }
+  buildTrayMenu();
+  return HOTKEY_ACTIONS.map((a) => hotkeyState[a.id]);
+}
+
+function prettyAccelerator(accel) {
+  return accel
+    .replace(/CommandOrControl/g, process.platform === 'darwin' ? 'Cmd' : 'Ctrl')
+    .replace(/PrintScreen/g, 'PrtScn');
+}
+
+ipcMain.handle('get-hotkeys', () => HOTKEY_ACTIONS.map((a) => hotkeyState[a.id]).filter(Boolean));
+
+ipcMain.handle('set-hotkey', (e, { id, accelerator }) => {
+  const action = HOTKEY_ACTIONS.find((a) => a.id === id);
+  if (!action) return { error: 'unknown action' };
+  if (accelerator) {
+    for (const other of HOTKEY_ACTIONS) {
+      const st = hotkeyState[other.id];
+      if (other.id !== id && st && st.ok && st.accelerator === accelerator) {
+        return { error: `already used by “${other.label}”` };
+      }
+    }
+  }
+  const settings = loadSettings();
+  settings.hotkeys = settings.hotkeys || {};
+  if (accelerator) settings.hotkeys[id] = accelerator;
+  else delete settings.hotkeys[id]; // back to defaults for this action
+  saveSettings(settings);
+  registerAllHotkeys();
+  return { state: hotkeyState[id] };
+});
+
+ipcMain.handle('reset-hotkeys', () => {
+  const settings = loadSettings();
+  delete settings.hotkeys;
+  saveSettings(settings);
+  return registerAllHotkeys();
+});
+
+// ---------------------------------------------------------------------------
+// Tray
 // ---------------------------------------------------------------------------
 
 function createTray() {
@@ -626,36 +766,30 @@ function createTray() {
     .resize({ width: 18, height: 18 });
   tray = new Tray(icon);
   tray.setToolTip('OpenSnag — screen capture');
+  tray.on('click', showMainWindow);
+  buildTrayMenu();
+}
+
+function buildTrayMenu() {
+  if (!tray) return;
+  const hint = (id) => {
+    const st = hotkeyState[id];
+    return st && st.ok ? `\t${prettyAccelerator(st.accelerator)}` : '';
+  };
+  const fire = (id) => HOTKEY_ACTIONS.find((a) => a.id === id).run();
   tray.setContextMenu(
     Menu.buildFromTemplate([
       { label: 'Open OpenSnag', click: showMainWindow },
       { type: 'separator' },
-      { label: 'Capture region\tPrtScn', click: () => startRegionCapture() },
-      { label: 'Capture full screen\tCtrl+Shift+PrtScn', click: () => captureFullScreen() },
+      { label: `Capture region${hint('region')}`, click: () => fire('region') },
+      { label: `Capture full screen${hint('fullscreen')}`, click: () => fire('fullscreen') },
+      { label: `Capture window${hint('window')}`, click: () => fire('window') },
+      { label: `Panoramic capture${hint('panoramic')}`, click: () => fire('panoramic') },
+      { label: `Start / stop recording${hint('record')}`, click: () => fire('record') },
       { type: 'separator' },
       { label: 'Quit', click: () => { isQuitting = true; app.quit(); } }
     ])
   );
-  tray.on('click', showMainWindow);
-}
-
-function registerHotkeys() {
-  const tryRegister = (accel, fn) => {
-    try {
-      return globalShortcut.register(accel, fn);
-    } catch {
-      return false;
-    }
-  };
-  // SnagIt-style PrintScreen hooks, with portable fallbacks.
-  tryRegister('PrintScreen', () => startRegionCapture());
-  tryRegister('CommandOrControl+Shift+PrintScreen', () => captureFullScreen());
-  tryRegister('CommandOrControl+Alt+R', () => startRegionCapture());
-  tryRegister('CommandOrControl+Alt+F', () => captureFullScreen());
-  tryRegister('CommandOrControl+Alt+V', () => {
-    showMainWindow();
-    mainWindow.webContents.send('hotkey', 'toggle-recording');
-  });
 }
 
 // ---------------------------------------------------------------------------
@@ -671,7 +805,7 @@ if (!gotLock) {
   app.whenReady().then(() => {
     createMainWindow();
     createTray();
-    registerHotkeys();
+    registerAllHotkeys();
     installDisplayMediaHandler();
   });
 
